@@ -1,0 +1,12 @@
+[package]
+name = "cowlang-viz"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+cowlang = { path = "../cowlang" }
+crossterm = { version = "0.29.0", features = ["event-stream"] }
+futures = "0.3.31"
+ratatui = "0.29.0"
+tokio = { version = "1.47.1", features = ["full"] }
