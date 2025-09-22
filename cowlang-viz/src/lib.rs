@@ -11,18 +11,24 @@ use cowlang::{Cowlang, Program};
 use crossterm::event::KeyCode;
 use ratatui::DefaultTerminal;
 
-pub async fn vizualize<'a>(program: Program<'a>) -> Result<()> {
+pub struct Options<'a> {
+    pub fps: f64,
+    pub program: Program<'a>,
+}
+
+pub async fn vizualize<'a>(options: Options<'a>) -> Result<()> {
     let mut term = ratatui::init();
 
     let (mut writer_tx, writer_rx) = crate::io::writer();
-    let mut interp = Cowlang::new(program);
+    let mut interp = Cowlang::new(options.program);
+    let events = Events::new(options.fps);
 
     interp.with_writer(&mut writer_tx);
 
     let app = App {
         interp,
         writer_rx,
-        events: Events::new(),
+        events,
         quit: false,
     };
 

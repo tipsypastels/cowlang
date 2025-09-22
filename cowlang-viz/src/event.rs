@@ -4,8 +4,6 @@ use futures::{FutureExt, StreamExt};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-pub const FPS: f64 = 10.0;
-
 pub enum Event {
     Tick,
     Term(crossterm::event::Event),
@@ -16,10 +14,10 @@ pub struct Events {
 }
 
 impl Events {
-    pub fn new() -> Self {
+    pub fn new(fps: f64) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         let actor = Actor { tx };
-        tokio::spawn(async move { actor.run().await });
+        tokio::spawn(async move { actor.run(fps).await });
         Self { rx }
     }
 
@@ -33,8 +31,8 @@ struct Actor {
 }
 
 impl Actor {
-    async fn run(self) -> Result<()> {
-        let tick_rate = Duration::from_secs_f64(1.0 / FPS);
+    async fn run(self, fps: f64) -> Result<()> {
+        let tick_rate = Duration::from_secs_f64(1.0 / fps);
         let mut reader = EventStream::new();
         let mut tick = tokio::time::interval(tick_rate);
 
