@@ -140,6 +140,7 @@ fn render_program(app: &RenderApp, area: Rect, buf: &mut Buffer) {
 fn render_current_instruction(app: &RenderApp, area: Rect, buf: &mut Buffer) {
     let command = app.interp.current_instruction();
 
+    let cursor = || Span::styled("    ", Modifier::UNDERLINED);
     let current_value = || Span::styled("current value", Modifier::UNDERLINED);
     let check = |c: bool| {
         if c {
@@ -161,12 +162,12 @@ fn render_current_instruction(app: &RenderApp, area: Rect, buf: &mut Buffer) {
         ]),
         Some(Command::mOo) => Line::from(vec![
             Span::raw("move the "),
-            Span::styled("cursor", Modifier::UNDERLINED),
+            cursor(),
             Span::raw(" backward"),
         ]),
         Some(Command::moO) => Line::from(vec![
             Span::raw("move the "),
-            Span::styled("cursor", Modifier::UNDERLINED),
+            cursor(),
             Span::raw(" forward"),
         ]),
         Some(Command::mOO) => Line::from(vec![
@@ -186,7 +187,7 @@ fn render_current_instruction(app: &RenderApp, area: Rect, buf: &mut Buffer) {
         Some(Command::MOO) => Line::from(vec![
             Span::raw("if the "),
             current_value(),
-            Span::raw("is 0 ("),
+            Span::raw(" is 0 ("),
             check(app.interp.current_value() == 0),
             Span::raw("), skip next command and jump to "),
             Span::styled("moo", Style::new().bg(Color::Cyan)),
@@ -194,24 +195,24 @@ fn render_current_instruction(app: &RenderApp, area: Rect, buf: &mut Buffer) {
         Some(Command::OOO) => Line::from(vec![
             Span::raw("set the "),
             current_value(),
-            Span::raw("to 0"),
+            Span::raw(" to 0"),
         ]),
         Some(Command::MMM) => Line::from(vec![
             Span::raw("if the register is empty ("),
             check(app.interp.register().is_none()),
             Span::raw("), set it to the "),
             current_value(),
-            Span::raw("vice-versa otherwise"),
+            Span::raw(" vice-versa otherwise"),
         ]),
         Some(Command::OOM) => Line::from(vec![
             Span::raw("write the "),
             current_value(),
-            Span::raw("to stdout"),
+            Span::raw(" to stdout"),
         ]),
         Some(Command::oom) => Line::from(vec![
             Span::raw("read the "),
             current_value(),
-            Span::raw("from stdout"),
+            Span::raw(" from stdout"),
         ]),
         None => Line::raw("<no instruction>"),
     };
