@@ -138,7 +138,17 @@ fn render_program(app: &RenderApp, area: Rect, buf: &mut Buffer) {
 }
 
 fn render_current_instruction(app: &RenderApp, area: Rect, buf: &mut Buffer) {
-    let command = app.interp.program().get(app.interp.program_idx()).copied();
+    let command = app.interp.current_instruction();
+
+    let current_value = || Span::styled("current value", Modifier::UNDERLINED);
+    let check = |c: bool| {
+        if c {
+            Span::styled("✓", Color::Green)
+        } else {
+            Span::styled("×", Color::Red)
+        }
+    };
+
     let title = command
         .as_ref()
         .map(|c| Cow::Owned(format!("Instruction: {c:?}")))
@@ -146,61 +156,61 @@ fn render_current_instruction(app: &RenderApp, area: Rect, buf: &mut Buffer) {
 
     let line = match command {
         Some(Command::moo) => Line::from(vec![
-            Span::raw("jumps backwards to the nearest "),
+            Span::raw("jump backwards to "),
             Span::styled("MOO", Color::Cyan),
         ]),
         Some(Command::mOo) => Line::from(vec![
-            Span::raw("moves the "),
+            Span::raw("move the "),
             Span::styled("cursor", Modifier::UNDERLINED),
             Span::raw(" backward"),
         ]),
         Some(Command::moO) => Line::from(vec![
-            Span::raw("moves the "),
+            Span::raw("move the "),
             Span::styled("cursor", Modifier::UNDERLINED),
             Span::raw(" forward"),
         ]),
         Some(Command::mOO) => Line::from(vec![
             Span::raw("evaluate the "),
-            Span::styled("current value", Modifier::UNDERLINED),
+            current_value(),
             Span::raw(" as an instruction"),
         ]),
         Some(Command::Moo) => Line::from(vec![
             Span::raw("if the "),
-            Span::styled("current value", Modifier::UNDERLINED),
-            Span::raw("is 0, read it from stdin, else write it to stdout"),
+            current_value(),
+            Span::raw(" is 0 ("),
+            check(app.interp.current_value() == 0),
+            Span::raw("), read it from stdin, else write it to stdout"),
         ]),
-        Some(Command::MOo) => Line::from(vec![
-            Span::raw("decrement the "),
-            Span::styled("current value", Modifier::UNDERLINED),
-        ]),
-        Some(Command::MoO) => Line::from(vec![
-            Span::raw("increment the "),
-            Span::styled("current value", Modifier::UNDERLINED),
-        ]),
+        Some(Command::MOo) => Line::from(vec![Span::raw("decrement the "), current_value()]),
+        Some(Command::MoO) => Line::from(vec![Span::raw("increment the "), current_value()]),
         Some(Command::MOO) => Line::from(vec![
             Span::raw("if the "),
-            Span::styled("current value", Modifier::UNDERLINED),
-            Span::raw("is 0, skip the next command and jump to the next "),
+            current_value(),
+            Span::raw("is 0 ("),
+            check(app.interp.current_value() == 0),
+            Span::raw("), skip next command and jump to "),
             Span::styled("moo", Style::new().bg(Color::Cyan)),
         ]),
         Some(Command::OOO) => Line::from(vec![
             Span::raw("set the "),
-            Span::styled("current value", Modifier::UNDERLINED),
+            current_value(),
             Span::raw("to 0"),
         ]),
         Some(Command::MMM) => Line::from(vec![
-            Span::raw("if the register is empty, set it to the "),
-            Span::styled("current value", Modifier::UNDERLINED),
+            Span::raw("if the register is empty ("),
+            check(app.interp.register().is_none()),
+            Span::raw("), set it to the "),
+            current_value(),
             Span::raw("vice-versa otherwise"),
         ]),
         Some(Command::OOM) => Line::from(vec![
             Span::raw("write the "),
-            Span::styled("current value", Modifier::UNDERLINED),
+            current_value(),
             Span::raw("to stdout"),
         ]),
         Some(Command::oom) => Line::from(vec![
             Span::raw("read the "),
-            Span::styled("current value", Modifier::UNDERLINED),
+            current_value(),
             Span::raw("from stdout"),
         ]),
         None => Line::raw("<no instruction>"),

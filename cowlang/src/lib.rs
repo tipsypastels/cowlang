@@ -64,6 +64,14 @@ impl<'a> Cowlang<'a> {
         self.program_idx
     }
 
+    pub fn current_instruction(&self) -> Option<Command> {
+        self.program.get(self.program_idx).copied()
+    }
+
+    pub fn current_value(&self) -> u8 {
+        self.memory[self.memory_idx]
+    }
+
     pub fn register(&self) -> Option<u8> {
         self.register
     }
