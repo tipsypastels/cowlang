@@ -4,7 +4,7 @@ mod render;
 
 use self::{
     event::{Event, Events},
-    io::WriterRx,
+    io::OutputRx,
 };
 use anyhow::{Context, Result};
 use cowlang::{Cowlang, Program};
@@ -18,20 +18,23 @@ pub struct Options<'a> {
 pub async fn vizualize<'a>(options: Options<'a>) -> Result<()> {
     let mut term = ratatui::init();
 
-    let (mut writer_tx, writer_rx) = crate::io::writer();
-    let writer_view = WriterView::default();
+    let (mut output_tx, output_rx) = crate::io::output();
 
     let framerate = FramerateOption::default();
     let events = Events::new(framerate.fps());
 
-    let mut interp = Cowlang::new(options.program);
+    let mut input = crate::io::InputTemp;
 
-    interp.with_writer(&mut writer_tx);
+    let interp = Cowlang::new(cowlang::Options {
+        program: options.program,
+        input: &mut input,
+        output: &mut output_tx,
+    });
 
     let app = App {
         interp,
-        writer_rx,
-        writer_view,
+        writer_rx: output_rx,
+        writer_with_spaces: false,
         framerate,
         events,
         quit: false,
@@ -45,8 +48,8 @@ pub async fn vizualize<'a>(options: Options<'a>) -> Result<()> {
 
 struct App<'a> {
     interp: Cowlang<'a>,
-    writer_rx: WriterRx,
-    writer_view: WriterView,
+    writer_rx: OutputRx,
+    writer_with_spaces: bool,
     framerate: FramerateOption,
     events: Events,
     quit: bool,
@@ -63,8 +66,8 @@ impl App<'_> {
                 }
                 Event::Term(crossterm::event::Event::Key(event)) if event.is_press() => {
                     match event.code {
-                        KeyCode::Char('w') => {
-                            self.writer_view = self.writer_view.next();
+                        KeyCode::Char('s') => {
+                            self.writer_with_spaces = !self.writer_with_spaces;
                         }
                         KeyCode::Char('f') => {
                             self.framerate = self.framerate.next();
@@ -88,7 +91,7 @@ impl App<'_> {
             let render_app = crate::render::RenderApp {
                 interp: &self.interp,
                 writer_rx: &self.writer_rx,
-                writer_view: self.writer_view,
+                writer_with_spaces: self.writer_with_spaces,
                 framerate: self.framerate,
             };
             crate::render::render(&render_app, frame);
@@ -98,24 +101,9 @@ impl App<'_> {
     }
 
     fn tick(&mut self) {
-        self.interp.advance();
+        // TODO: Handle.
+        self.interp.advance().unwrap();
         self.writer_rx.tick();
-    }
-}
-
-#[derive(Default, Debug, Copy, Clone)]
-enum WriterView {
-    #[default]
-    Bytes,
-    Text,
-}
-
-impl WriterView {
-    fn next(self) -> Self {
-        match self {
-            Self::Bytes => Self::Text,
-            Self::Text => Self::Bytes,
-        }
     }
 }
 
