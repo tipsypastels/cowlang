@@ -33,8 +33,8 @@ pub async fn vizualize<'a>(options: Options<'a>) -> Result<()> {
 
     let app = App {
         interp,
-        writer_rx: output_rx,
-        writer_with_spaces: false,
+        output_rx,
+        output_with_spaces: false,
         framerate,
         events,
         quit: false,
@@ -48,8 +48,8 @@ pub async fn vizualize<'a>(options: Options<'a>) -> Result<()> {
 
 struct App<'a> {
     interp: Cowlang<'a>,
-    writer_rx: OutputRx,
-    writer_with_spaces: bool,
+    output_rx: OutputRx,
+    output_with_spaces: bool,
     framerate: FramerateOption,
     events: Events,
     quit: bool,
@@ -67,7 +67,7 @@ impl App<'_> {
                 Event::Term(crossterm::event::Event::Key(event)) if event.is_press() => {
                     match event.code {
                         KeyCode::Char('s') => {
-                            self.writer_with_spaces = !self.writer_with_spaces;
+                            self.output_with_spaces = !self.output_with_spaces;
                         }
                         KeyCode::Char('f') => {
                             self.framerate = self.framerate.next();
@@ -90,8 +90,8 @@ impl App<'_> {
         term.draw(|frame| {
             let render_app = crate::render::RenderApp {
                 interp: &self.interp,
-                writer_rx: &self.writer_rx,
-                writer_with_spaces: self.writer_with_spaces,
+                output_rx: &self.output_rx,
+                output_with_spaces: self.output_with_spaces,
                 framerate: self.framerate,
             };
             crate::render::render(&render_app, frame);
@@ -102,7 +102,7 @@ impl App<'_> {
 
     fn tick(&mut self) -> Result<()> {
         self.interp.advance()?;
-        self.writer_rx.tick();
+        self.output_rx.tick();
 
         Ok(())
     }

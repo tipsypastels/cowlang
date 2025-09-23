@@ -8,8 +8,8 @@ use std::borrow::Cow;
 
 pub struct RenderApp<'f, 'a> {
     pub interp: &'f Cowlang<'a>,
-    pub writer_rx: &'f OutputRx,
-    pub writer_with_spaces: bool,
+    pub output_rx: &'f OutputRx,
+    pub output_with_spaces: bool,
     pub framerate: FramerateOption,
 }
 
@@ -35,7 +35,7 @@ fn render_left_col(app: &RenderApp, area: Rect, buf: &mut Buffer) {
         .spacing(1)
         .split(rows[1]);
 
-    render_writer_output(app, bottom_cols[0], buf);
+    render_output(app, bottom_cols[0], buf);
     render_register(app, bottom_cols[1], buf);
 }
 
@@ -64,11 +64,11 @@ fn render_memory(app: &RenderApp, area: Rect, buf: &mut Buffer) {
     paragraph.render(area, buf);
 }
 
-fn render_writer_output(app: &RenderApp, area: Rect, buf: &mut Buffer) {
-    let (value, controls) = if app.writer_with_spaces {
-        (app.writer_rx.as_str_with_spaces(), " Hide dividers <S> ")
+fn render_output(app: &RenderApp, area: Rect, buf: &mut Buffer) {
+    let (value, controls) = if app.output_with_spaces {
+        (app.output_rx.as_str_with_spaces(), " Hide dividers <S> ")
     } else {
-        (app.writer_rx.as_str(), " Show dividers <S> ")
+        (app.output_rx.as_str(), " Show dividers <S> ")
     };
 
     let block = Block::bordered()
