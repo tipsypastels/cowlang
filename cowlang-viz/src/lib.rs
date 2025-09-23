@@ -62,7 +62,7 @@ impl App<'_> {
 
             match self.events.next().await? {
                 Event::Tick => {
-                    self.tick();
+                    self.tick()?;
                 }
                 Event::Term(crossterm::event::Event::Key(event)) if event.is_press() => {
                     match event.code {
@@ -100,10 +100,11 @@ impl App<'_> {
         .context("failed to draw frame")
     }
 
-    fn tick(&mut self) {
-        // TODO: Handle.
-        self.interp.advance().unwrap();
+    fn tick(&mut self) -> Result<()> {
+        self.interp.advance()?;
         self.writer_rx.tick();
+
+        Ok(())
     }
 }
 
