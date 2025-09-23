@@ -8,7 +8,7 @@ use self::{
 };
 use anyhow::{Context, Result};
 use cowlang::{Cowlang, Program};
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::DefaultTerminal;
 
 pub struct Options<'a> {
@@ -65,25 +65,29 @@ impl App<'_> {
                     self.tick()?;
                 }
                 Event::Term(crossterm::event::Event::Key(event)) if event.is_press() => {
-                    match event.code {
-                        KeyCode::Char('s') => {
-                            self.output_with_spaces = !self.output_with_spaces;
-                        }
-                        KeyCode::Char('f') => {
-                            self.framerate = self.framerate.next();
-                            self.events.set_fps(self.framerate.fps());
-                        }
-                        KeyCode::Char('q') => {
-                            self.quit = true;
-                        }
-                        _ => {}
-                    }
+                    self.handle_key_event(event);
                 }
                 _ => {}
             }
         }
 
         Ok(())
+    }
+
+    fn handle_key_event(&mut self, event: KeyEvent) {
+        match event.code {
+            KeyCode::Char('s') => {
+                self.output_with_spaces = !self.output_with_spaces;
+            }
+            KeyCode::Char('f') => {
+                self.framerate = self.framerate.next();
+                self.events.set_fps(self.framerate.fps());
+            }
+            KeyCode::Char('q') => {
+                self.quit = true;
+            }
+            _ => {}
+        }
     }
 
     fn draw(&mut self, term: &mut DefaultTerminal) -> Result<()> {
