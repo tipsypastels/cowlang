@@ -4,5 +4,5 @@ use cowlang::Program;
 #[tokio::main]
 async fn main() -> Result<()> {
     let program = Program::parse(include_str!("../../cowlang-samples/hello-world-loops.txt"));
-    cowlang_viz::vizualize(cowlang_viz::Options { fps: 1.0, program }).await
+    cowlang_viz::vizualize(cowlang_viz::Options { program }).await
 }

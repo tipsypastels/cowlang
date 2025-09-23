@@ -1,4 +1,4 @@
-use crate::io::WriterRx;
+use crate::{FramerateOption, WriterView, io::WriterRx};
 use cowlang::{Command, Cowlang};
 use ratatui::{
     prelude::*,
@@ -9,6 +9,8 @@ use std::borrow::Cow;
 pub struct RenderApp<'f, 'a> {
     pub interp: &'f Cowlang<'a>,
     pub writer_rx: &'f WriterRx,
+    pub writer_view: WriterView,
+    pub framerate: FramerateOption,
 }
 
 pub fn render(app: &RenderApp, frame: &mut Frame) {
@@ -63,11 +65,35 @@ fn render_memory(app: &RenderApp, area: Rect, buf: &mut Buffer) {
 }
 
 fn render_writer_output(app: &RenderApp, area: Rect, buf: &mut Buffer) {
+    let (label, line) = match app.writer_view {
+        WriterView::Bytes => (
+            "bytes",
+            Line::from(vec![
+                Span::styled("[", Color::DarkGray),
+                Span::raw(format!("{:?}", app.writer_rx.as_bytes())),
+                Span::styled("]", Color::DarkGray),
+            ]),
+        ),
+        WriterView::Text => (
+            "text",
+            if let Some(s) = app.writer_rx.as_str() {
+                Line::from(vec![
+                    Span::styled("\"", Color::DarkGray),
+                    Span::raw(s),
+                    Span::styled("\"", Color::DarkGray),
+                ])
+            } else {
+                Line::styled("<invalid UTF-8>", Color::Red)
+            },
+        ),
+    };
+
     let block = Block::bordered()
         .title(Line::styled(" Written ", Modifier::BOLD).centered())
+        .title_bottom(Line::styled(format!(" Viewing {label} "), Modifier::BOLD).centered())
         .padding(Padding::uniform(1));
 
-    Paragraph::new(format!("{}", app.writer_rx.display()))
+    Paragraph::new(line)
         .block(block)
         .wrap(Wrap { trim: true })
         .render(area, buf);
@@ -128,8 +154,20 @@ fn render_program(app: &RenderApp, area: Rect, buf: &mut Buffer) {
         line.push_span(Span::raw(" "));
     }
 
+    let fps = app.framerate.fps();
+
     let block = Block::bordered()
         .title(Line::styled(" Program ", Modifier::BOLD).centered())
+        .title_bottom(
+            Line::styled(
+                format!(
+                    " Viewing {fps} tick{}/s <F> ",
+                    if fps == 1.0 { "s" } else { "" }
+                ),
+                Modifier::BOLD,
+            )
+            .centered(),
+        )
         .padding(Padding::uniform(1));
 
     let paragraph = Paragraph::new(line).wrap(Wrap { trim: true }).block(block);
@@ -231,8 +269,6 @@ fn render_current_state(app: &RenderApp, area: Rect, buf: &mut Buffer) {
         "Completed"
     } else if app.interp.aborted() {
         "Aborted"
-    } else if app.interp.skipping() {
-        "Skipping"
     } else {
         "Running"
     };

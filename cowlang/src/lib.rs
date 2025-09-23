@@ -14,7 +14,6 @@ pub struct Cowlang<'a> {
     reader: MaybeDynRead<'a>,
     writer: MaybeDynWrite<'a>,
     register: Option<u8>,
-    skip_flag: Option<SkipFlag>,
     aborted: bool,
 }
 
@@ -28,7 +27,6 @@ impl<'a> Cowlang<'a> {
             reader: MaybeDynRead::default(),
             writer: MaybeDynWrite::default(),
             register: None,
-            skip_flag: None,
             aborted: false,
         }
     }
@@ -76,10 +74,6 @@ impl<'a> Cowlang<'a> {
         self.register
     }
 
-    pub fn skipping(&self) -> bool {
-        self.skip_flag.is_some()
-    }
-
     pub fn aborted(&self) -> bool {
         self.aborted
     }
@@ -99,17 +93,7 @@ impl<'a> Cowlang<'a> {
             return;
         }
         if let Some(&command) = self.program.get(self.program_idx) {
-            match self.skip_flag {
-                Some(SkipFlag::SkipNextThenToAfterEndpoint) => {
-                    self.skip_flag = Some(SkipFlag::SkipToAfterEndpoint);
-                }
-                Some(SkipFlag::SkipToAfterEndpoint) => {
-                    if let Command::moo = command {
-                        self.skip_flag = None;
-                    }
-                }
-                None => self.evaluate(command),
-            }
+            self.evaluate(command);
             self.program_idx += 1;
         }
     }
@@ -132,20 +116,32 @@ impl<'a> Cowlang<'a> {
         }
 
         match command {
-            // TODO: Does this skip the previous instruction? It should.
             Command::moo => {
-                if let Some((program_idx, _)) = self
-                    .program
-                    .iter()
-                    .enumerate()
-                    .rev()
-                    .find(|&(i, &c)| i < (self.program_idx - 1) && matches!(c, Command::MOO))
-                {
-                    // it's about to be incremented at the end of the `run` loop so account for that
-                    self.program_idx = program_idx - 1;
-                } else {
-                    // eprintln!("could not find jump back point")
-                };
+                self.program_idx = self.program_idx.saturating_sub(1);
+
+                let mut unmatched_moos = 1;
+
+                while unmatched_moos > 0 {
+                    if self.program_idx == 0 {
+                        abort!("beginless backwards jump");
+                    }
+
+                    self.program_idx -= 1;
+
+                    match self.current_instruction() {
+                        Some(Command::moo) => {
+                            unmatched_moos += 1;
+                        }
+                        Some(Command::MOO) => {
+                            unmatched_moos -= 1;
+                        }
+                        _ => {}
+                    }
+                }
+
+                if let Some(command) = self.current_instruction() {
+                    self.evaluate(command);
+                }
             }
             Command::mOo => {
                 self.memory_idx = self.memory_idx.saturating_sub(1);
@@ -181,7 +177,7 @@ impl<'a> Cowlang<'a> {
                             // eprintln!("read a char: {}", input[0]);
                             *value = input[0];
                         }
-                        Err(e) => {
+                        Err(_) => {
                             // eprintln!("failed to read a char: {e}")
                         }
                     }
@@ -196,7 +192,7 @@ impl<'a> Cowlang<'a> {
                         Ok(()) => {
                             // eprintln!("wrote a char: {char}");
                         }
-                        Err(e) => {
+                        Err(_) => {
                             // eprintln!("failed to write a char: {e}");
                         }
                     }
@@ -210,7 +206,34 @@ impl<'a> Cowlang<'a> {
             }
             Command::MOO => {
                 if value!() == 0 {
-                    self.skip_flag = Some(SkipFlag::SkipNextThenToAfterEndpoint);
+                    #[allow(non_snake_case)]
+                    let mut unmatched_MOOs = 1;
+                    let mut prev_command;
+
+                    self.program_idx = self.program_idx.saturating_add(1);
+
+                    while unmatched_MOOs > 0 {
+                        let Some(command) = self.current_instruction() else {
+                            abort!("endless forward jump");
+                        };
+
+                        prev_command = command;
+                        self.program_idx += 1;
+
+                        match self.current_instruction() {
+                            Some(Command::moo) => {
+                                unmatched_MOOs -= 1;
+
+                                if matches!(prev_command, Command::MOO) {
+                                    unmatched_MOOs -= 1;
+                                }
+                            }
+                            Some(Command::MOO) => {
+                                unmatched_MOOs += 1;
+                            }
+                            _ => {}
+                        }
+                    }
                 }
             }
             Command::OOO => {
@@ -233,7 +256,7 @@ impl<'a> Cowlang<'a> {
                     Ok(()) => {
                         // eprintln!("wrote an int");
                     }
-                    Err(e) => {
+                    Err(_) => {
                         // eprintln!("failed to write an int: {e}");
                     }
                 }
@@ -246,17 +269,11 @@ impl<'a> Cowlang<'a> {
                         // eprintln!("read an int: {}", input[0]);
                         value!() = input[0];
                     }
-                    Err(e) => {
+                    Err(_) => {
                         // eprintln!("failed to read an int: {e}")
                     }
                 }
             }
         }
     }
-}
-
-#[derive(Debug, Copy, Clone)]
-enum SkipFlag {
-    SkipNextThenToAfterEndpoint,
-    SkipToAfterEndpoint,
 }
