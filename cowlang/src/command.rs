@@ -39,10 +39,10 @@ impl FromStr for Command {
     }
 }
 
-impl TryFrom<u8> for Command {
+impl TryFrom<u32> for Command {
     type Error = ();
 
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
         Ok(match value {
             0 => Command::moo,
             1 => Command::mOo,

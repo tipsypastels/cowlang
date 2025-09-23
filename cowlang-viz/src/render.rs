@@ -1,4 +1,4 @@
-use crate::io::WriterRx;
+use crate::{FramerateOption, io::OutputRx};
 use cowlang::{Command, Cowlang};
 use ratatui::{
     prelude::*,
@@ -8,7 +8,9 @@ use std::borrow::Cow;
 
 pub struct RenderApp<'f, 'a> {
     pub interp: &'f Cowlang<'a>,
-    pub writer_rx: &'f WriterRx,
+    pub writer_rx: &'f OutputRx,
+    pub writer_with_spaces: bool,
+    pub framerate: FramerateOption,
 }
 
 pub fn render(app: &RenderApp, frame: &mut Frame) {
@@ -40,9 +42,9 @@ fn render_left_col(app: &RenderApp, area: Rect, buf: &mut Buffer) {
 fn render_memory(app: &RenderApp, area: Rect, buf: &mut Buffer) {
     let mut line = Line::default();
 
-    for (i, byte) in app.interp.memory().iter().enumerate() {
+    for (i, int) in app.interp.memory().iter().enumerate() {
         let is_current = i == app.interp.memory_idx();
-        let value = format!("{byte:08b}");
+        let value = format!("{int}");
         let span = if is_current {
             Span::styled(value, Modifier::UNDERLINED)
         } else {
@@ -63,11 +65,18 @@ fn render_memory(app: &RenderApp, area: Rect, buf: &mut Buffer) {
 }
 
 fn render_writer_output(app: &RenderApp, area: Rect, buf: &mut Buffer) {
+    let (value, controls) = if app.writer_with_spaces {
+        (app.writer_rx.as_str_with_spaces(), " Hide spaces <S> ")
+    } else {
+        (app.writer_rx.as_str(), " Show spaces <S> ")
+    };
+
     let block = Block::bordered()
         .title(Line::styled(" Written ", Modifier::BOLD).centered())
+        .title_bottom(Line::styled(controls, Modifier::BOLD))
         .padding(Padding::uniform(1));
 
-    Paragraph::new(format!("{}", app.writer_rx.display()))
+    Paragraph::new(value)
         .block(block)
         .wrap(Wrap { trim: true })
         .render(area, buf);
@@ -128,8 +137,14 @@ fn render_program(app: &RenderApp, area: Rect, buf: &mut Buffer) {
         line.push_span(Span::raw(" "));
     }
 
+    let fps = app.framerate.fps();
+
     let block = Block::bordered()
         .title(Line::styled(" Program ", Modifier::BOLD).centered())
+        .title_bottom(Line::styled(
+            format!(" Change ticks/s <F> ({fps}) "),
+            Modifier::BOLD,
+        ))
         .padding(Padding::uniform(1));
 
     let paragraph = Paragraph::new(line).wrap(Wrap { trim: true }).block(block);
@@ -229,10 +244,6 @@ fn render_current_instruction(app: &RenderApp, area: Rect, buf: &mut Buffer) {
 fn render_current_state(app: &RenderApp, area: Rect, buf: &mut Buffer) {
     let state = if app.interp.completed() {
         "Completed"
-    } else if app.interp.aborted() {
-        "Aborted"
-    } else if app.interp.skipping() {
-        "Skipping"
     } else {
         "Running"
     };

@@ -1,54 +1,41 @@
 mod command;
 mod io;
 
-pub use self::command::{Command, Program};
-
-use self::io::*;
-use std::io::{Read, Write};
+pub use self::{
+    command::{Command, Program},
+    io::{Input, Output},
+};
 
 pub struct Cowlang<'a> {
-    memory: Vec<u8>,
+    memory: Vec<u32>,
     memory_idx: usize,
     program: Program<'a>,
     program_idx: usize,
-    reader: MaybeDynRead<'a>,
-    writer: MaybeDynWrite<'a>,
-    register: Option<u8>,
-    skip_flag: Option<SkipFlag>,
-    aborted: bool,
+    input: &'a mut dyn Input,
+    output: &'a mut dyn Output,
+    register: Option<u32>,
+}
+
+pub struct Options<'a> {
+    pub program: Program<'a>,
+    pub input: &'a mut dyn Input,
+    pub output: &'a mut dyn Output,
 }
 
 impl<'a> Cowlang<'a> {
-    pub fn new(program: Program<'a>) -> Self {
+    pub fn new(options: Options<'a>) -> Self {
         Self {
             memory: vec![0],
             memory_idx: 0,
-            program,
+            program: options.program,
             program_idx: 0,
-            reader: MaybeDynRead::default(),
-            writer: MaybeDynWrite::default(),
+            input: options.input,
+            output: options.output,
             register: None,
-            skip_flag: None,
-            aborted: false,
         }
     }
 
-    pub fn with_reader(&mut self, reader: &'a mut dyn Read) -> &mut Self {
-        self.reader = MaybeDynRead::Dyn(reader);
-        self
-    }
-
-    pub fn with_writer(&mut self, writer: &'a mut dyn Write) -> &mut Self {
-        self.writer = MaybeDynWrite::Dyn(writer);
-        self
-    }
-
-    pub fn with_stderr_writer(&mut self) -> &mut Self {
-        self.writer = MaybeDynWrite::default_stderr();
-        self
-    }
-
-    pub fn memory(&self) -> &[u8] {
+    pub fn memory(&self) -> &[u32] {
         &self.memory
     }
 
@@ -68,84 +55,67 @@ impl<'a> Cowlang<'a> {
         self.program.get(self.program_idx).copied()
     }
 
-    pub fn current_value(&self) -> u8 {
+    pub fn current_value(&self) -> u32 {
         self.memory[self.memory_idx]
     }
 
-    pub fn register(&self) -> Option<u8> {
+    pub fn register(&self) -> Option<u32> {
         self.register
     }
 
-    pub fn skipping(&self) -> bool {
-        self.skip_flag.is_some()
-    }
-
-    pub fn aborted(&self) -> bool {
-        self.aborted
-    }
-
     pub fn completed(&self) -> bool {
-        self.aborted || self.program_idx >= self.program.len()
+        self.program_idx >= self.program.len()
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<(), Error> {
         while !self.completed() {
-            self.advance();
+            self.advance()?;
         }
+        Ok(())
     }
 
-    pub fn advance(&mut self) {
-        if self.aborted {
-            return;
-        }
+    pub fn advance(&mut self) -> Result<(), Error> {
         if let Some(&command) = self.program.get(self.program_idx) {
-            match self.skip_flag {
-                Some(SkipFlag::SkipNextThenToAfterEndpoint) => {
-                    self.skip_flag = Some(SkipFlag::SkipToAfterEndpoint);
-                }
-                Some(SkipFlag::SkipToAfterEndpoint) => {
-                    if let Command::moo = command {
-                        self.skip_flag = None;
-                    }
-                }
-                None => self.evaluate(command),
-            }
+            self.evaluate(command)?;
             self.program_idx += 1;
         }
+        Ok(())
     }
 
-    fn evaluate(&mut self, command: Command) {
-        // eprintln!("running command {command:?}");
-
+    fn evaluate(&mut self, command: Command) -> Result<(), Error> {
         macro_rules! value {
             () => {
                 self.memory[self.memory_idx]
             };
         }
 
-        macro_rules! abort {
-            ($reason:literal) => {
-                // eprintln!(concat!("aborting, ", $reason));
-                self.aborted = true;
-                return;
-            };
-        }
-
         match command {
-            // TODO: Does this skip the previous instruction? It should.
             Command::moo => {
-                if let Some((program_idx, _)) = self
-                    .program
-                    .iter()
-                    .enumerate()
-                    .rev()
-                    .find(|&(i, &c)| i < (self.program_idx - 1) && matches!(c, Command::MOO))
-                {
-                    // it's about to be incremented at the end of the `run` loop so account for that
-                    self.program_idx = program_idx - 1;
-                } else {
-                    // eprintln!("could not find jump back point")
-                };
+                self.program_idx = self.program_idx.saturating_sub(1);
+
+                let mut unmatched_moos = 1;
+
+                while unmatched_moos > 0 {
+                    if self.program_idx == 0 {
+                        return Err(Error::BeginlessJumpBackward);
+                    }
+
+                    self.program_idx -= 1;
+
+                    match self.current_instruction() {
+                        Some(Command::moo) => {
+                            unmatched_moos += 1;
+                        }
+                        Some(Command::MOO) => {
+                            unmatched_moos -= 1;
+                        }
+                        _ => {}
+                    }
+                }
+
+                if let Some(command) = self.current_instruction() {
+                    self.evaluate(command)?;
+                }
             }
             Command::mOo => {
                 self.memory_idx = self.memory_idx.saturating_sub(1);
@@ -154,52 +124,29 @@ impl<'a> Cowlang<'a> {
                 self.memory_idx = self.memory_idx.saturating_add(1);
 
                 if self.memory_idx == self.memory.len() {
-                    // eprintln!("growing memory");
                     self.memory.push(0);
                 }
             }
             Command::mOO => {
                 let value = value!();
 
-                if value == Command::mOO as u8 {
-                    abort!("recursive exec");
+                if value == Command::mOO as u32 {
+                    return Err(Error::RecursiveEval);
                 }
                 let Ok(executed_command) = Command::try_from(value) else {
-                    abort!("invalid command");
+                    return Err(Error::InvalidCommand);
                 };
 
-                self.evaluate(executed_command);
+                self.evaluate(executed_command)?;
             }
             Command::Moo => {
                 let value = &mut value!();
 
                 if *value == 0 {
-                    let mut input = [0u8; 1];
-
-                    match self.reader.read_exact(&mut input) {
-                        Ok(()) => {
-                            // eprintln!("read a char: {}", input[0]);
-                            *value = input[0];
-                        }
-                        Err(e) => {
-                            // eprintln!("failed to read a char: {e}")
-                        }
-                    }
+                    *value = self.input.input_char()? as u32;
                 } else {
-                    let char = char::from(*value);
-
-                    match self
-                        .writer
-                        .write_fmt(format_args!("{char}"))
-                        .and_then(|()| self.writer.flush())
-                    {
-                        Ok(()) => {
-                            // eprintln!("wrote a char: {char}");
-                        }
-                        Err(e) => {
-                            // eprintln!("failed to write a char: {e}");
-                        }
-                    }
+                    self.output
+                        .output_char(char::from_u32(*value).ok_or(Error::UnwritableChar)?)?;
                 }
             }
             Command::MOo => {
@@ -210,7 +157,34 @@ impl<'a> Cowlang<'a> {
             }
             Command::MOO => {
                 if value!() == 0 {
-                    self.skip_flag = Some(SkipFlag::SkipNextThenToAfterEndpoint);
+                    #[allow(non_snake_case)]
+                    let mut unmatched_MOOs = 1;
+                    let mut prev_command;
+
+                    self.program_idx = self.program_idx.saturating_add(1);
+
+                    while unmatched_MOOs > 0 {
+                        let Some(command) = self.current_instruction() else {
+                            return Err(Error::EndlessJumpForward);
+                        };
+
+                        prev_command = command;
+                        self.program_idx += 1;
+
+                        match self.current_instruction() {
+                            Some(Command::moo) => {
+                                unmatched_MOOs -= 1;
+
+                                if matches!(prev_command, Command::MOO) {
+                                    unmatched_MOOs -= 1;
+                                }
+                            }
+                            Some(Command::MOO) => {
+                                unmatched_MOOs += 1;
+                            }
+                            _ => {}
+                        }
+                    }
                 }
             }
             Command::OOO => {
@@ -225,38 +199,44 @@ impl<'a> Cowlang<'a> {
                 }
             },
             Command::OOM => {
-                match self
-                    .writer
-                    .write_all(&[value!()])
-                    .and_then(|()| self.writer.flush())
-                {
-                    Ok(()) => {
-                        // eprintln!("wrote an int");
-                    }
-                    Err(e) => {
-                        // eprintln!("failed to write an int: {e}");
-                    }
-                }
+                self.output.output_int(value!())?;
             }
             Command::oom => {
-                let mut input = [0u8; 1];
-
-                match self.reader.read_exact(&mut input) {
-                    Ok(()) => {
-                        // eprintln!("read an int: {}", input[0]);
-                        value!() = input[0];
-                    }
-                    Err(e) => {
-                        // eprintln!("failed to read an int: {e}")
-                    }
-                }
+                value!() = self.input.input_int()?;
             }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub enum Error {
+    BeginlessJumpBackward,
+    EndlessJumpForward,
+    InvalidCommand,
+    RecursiveEval,
+    UnwritableChar,
+    Io(std::io::Error),
+}
+
+impl std::error::Error for Error {}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BeginlessJumpBackward => write!(f, "beginless jump backward"),
+            Self::EndlessJumpForward => write!(f, "endless jump forward"),
+            Self::InvalidCommand => write!(f, "invalid command"),
+            Self::RecursiveEval => write!(f, "recursive evaluation"),
+            Self::UnwritableChar => write!(f, "unwritable char"),
+            Self::Io(error) => write!(f, "{error}"),
         }
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-enum SkipFlag {
-    SkipNextThenToAfterEndpoint,
-    SkipToAfterEndpoint,
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
+    }
 }
