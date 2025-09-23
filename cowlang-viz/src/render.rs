@@ -66,9 +66,9 @@ fn render_memory(app: &RenderApp, area: Rect, buf: &mut Buffer) {
 
 fn render_writer_output(app: &RenderApp, area: Rect, buf: &mut Buffer) {
     let (value, controls) = if app.writer_with_spaces {
-        (app.writer_rx.as_str_with_spaces(), " Hide spaces <S> ")
+        (app.writer_rx.as_str_with_spaces(), " Hide dividers <S> ")
     } else {
-        (app.writer_rx.as_str(), " Show spaces <S> ")
+        (app.writer_rx.as_str(), " Show dividers <S> ")
     };
 
     let block = Block::bordered()
