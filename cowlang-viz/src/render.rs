@@ -227,7 +227,7 @@ fn render_current_instruction(app: &RenderApp, area: Rect, buf: &mut Buffer) {
         Some(Command::oom) => Line::from(vec![
             Span::raw("read the "),
             current_value(),
-            Span::raw(" from stdout"),
+            Span::raw(" from stdin"),
         ]),
         None => Line::raw("<no instruction>"),
     };
