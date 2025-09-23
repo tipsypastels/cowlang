@@ -5,16 +5,20 @@ enum Value {
     Char(char),
 }
 
-pub struct InputTemp;
+enum ValueKind {
+    Int,
+    Char,
+}
 
-impl cowlang::Input for InputTemp {
-    fn input_int(&mut self) -> io::Result<u32> {
-        todo!()
-    }
-
-    fn input_char(&mut self) -> io::Result<char> {
-        todo!()
-    }
+pub fn input() -> (InputTx, InputRx) {
+    let (tx, rx) = mpsc::channel();
+    (
+        InputTx { tx },
+        InputRx {
+            rx,
+            current_op: None,
+        },
+    )
 }
 
 pub fn output() -> (OutputTx, OutputRx) {
@@ -27,6 +31,78 @@ pub fn output() -> (OutputTx, OutputRx) {
             rx,
         },
     )
+}
+
+pub struct InputTx {
+    tx: mpsc::Sender<(ValueKind, oneshot::Sender<Value>)>,
+}
+
+impl cowlang::Input for InputTx {
+    fn input_int(&mut self) -> io::Result<u32> {
+        let (syn, ack) = oneshot::channel();
+        let _ = self.tx.send((ValueKind::Int, syn));
+
+        match ack.recv() {
+            Ok(Value::Int(int)) => Ok(int),
+            _ => unreachable!(),
+        }
+    }
+
+    fn input_char(&mut self) -> io::Result<char> {
+        let (syn, ack) = oneshot::channel();
+        let _ = self.tx.send((ValueKind::Char, syn));
+
+        match ack.recv() {
+            Ok(Value::Char(char)) => Ok(char),
+            _ => unreachable!(),
+        }
+    }
+}
+
+pub struct InputRx {
+    rx: mpsc::Receiver<(ValueKind, oneshot::Sender<Value>)>,
+    current_op: Option<(ValueKind, oneshot::Sender<Value>, String)>,
+}
+
+impl InputRx {
+    pub fn current_op_buf(&self) -> Option<&str> {
+        self.current_op.as_ref().map(|(_, _, b)| b.as_str())
+    }
+
+    pub fn has_current_op(&self) -> bool {
+        self.current_op.is_some()
+    }
+
+    pub fn push_char_to_current_op(&mut self, char: char) {
+        if let Some((_, _, buf)) = self.current_op.as_mut() {
+            buf.push(char);
+        }
+    }
+
+    pub fn finish_current_op(&mut self) {
+        if let Some((value_kind, syn, buf)) = self.current_op.take() {
+            match value_kind {
+                ValueKind::Int => {
+                    // TODO: Handle.
+                    let int = buf.parse::<u32>().unwrap();
+                    let _ = syn.send(Value::Int(int));
+                }
+                ValueKind::Char => {
+                    // TODO: Handle.
+                    let char = buf.chars().next().unwrap();
+                    let _ = syn.send(Value::Char(char));
+                }
+            }
+        }
+    }
+
+    pub fn tick(&mut self) {
+        if self.current_op.is_none()
+            && let Ok((value_kind, syn)) = self.rx.try_recv()
+        {
+            self.current_op = Some((value_kind, syn, String::new()))
+        }
+    }
 }
 
 pub struct OutputTx {

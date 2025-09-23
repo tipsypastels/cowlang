@@ -4,11 +4,11 @@ mod render;
 
 use self::{
     event::{Event, Events},
-    io::OutputRx,
+    io::{InputRx, OutputRx},
 };
 use anyhow::{Context, Result};
 use cowlang::{Cowlang, Program};
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::DefaultTerminal;
 
 pub struct Options<'a> {
@@ -18,23 +18,23 @@ pub struct Options<'a> {
 pub async fn vizualize<'a>(options: Options<'a>) -> Result<()> {
     let mut term = ratatui::init();
 
+    let (mut input_tx, input_rx) = crate::io::input();
     let (mut output_tx, output_rx) = crate::io::output();
 
     let framerate = FramerateOption::default();
     let events = Events::new(framerate.fps());
 
-    let mut input = crate::io::InputTemp;
-
     let interp = Cowlang::new(cowlang::Options {
         program: options.program,
-        input: &mut input,
+        input: &mut input_tx,
         output: &mut output_tx,
     });
 
     let app = App {
         interp,
-        writer_rx: output_rx,
-        writer_with_spaces: false,
+        input_rx,
+        output_rx,
+        output_with_spaces: false,
         framerate,
         events,
         quit: false,
@@ -48,8 +48,9 @@ pub async fn vizualize<'a>(options: Options<'a>) -> Result<()> {
 
 struct App<'a> {
     interp: Cowlang<'a>,
-    writer_rx: OutputRx,
-    writer_with_spaces: bool,
+    input_rx: InputRx,
+    output_rx: OutputRx,
+    output_with_spaces: bool,
     framerate: FramerateOption,
     events: Events,
     quit: bool,
@@ -65,18 +66,10 @@ impl App<'_> {
                     self.tick()?;
                 }
                 Event::Term(crossterm::event::Event::Key(event)) if event.is_press() => {
-                    match event.code {
-                        KeyCode::Char('s') => {
-                            self.writer_with_spaces = !self.writer_with_spaces;
-                        }
-                        KeyCode::Char('f') => {
-                            self.framerate = self.framerate.next();
-                            self.events.set_fps(self.framerate.fps());
-                        }
-                        KeyCode::Char('q') => {
-                            self.quit = true;
-                        }
-                        _ => {}
+                    if self.input_rx.has_current_op() {
+                        self.handle_input_key_event(event);
+                    } else {
+                        self.handle_key_event(event);
                     }
                 }
                 _ => {}
@@ -86,12 +79,41 @@ impl App<'_> {
         Ok(())
     }
 
+    fn handle_input_key_event(&mut self, event: KeyEvent) {
+        match event.code {
+            KeyCode::Char(char) => {
+                self.input_rx.push_char_to_current_op(char);
+            }
+            KeyCode::Enter => {
+                self.input_rx.finish_current_op();
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_key_event(&mut self, event: KeyEvent) {
+        match event.code {
+            KeyCode::Char('s') => {
+                self.output_with_spaces = !self.output_with_spaces;
+            }
+            KeyCode::Char('f') => {
+                self.framerate = self.framerate.next();
+                self.events.set_fps(self.framerate.fps());
+            }
+            KeyCode::Char('q') => {
+                self.quit = true;
+            }
+            _ => {}
+        }
+    }
+
     fn draw(&mut self, term: &mut DefaultTerminal) -> Result<()> {
         term.draw(|frame| {
             let render_app = crate::render::RenderApp {
                 interp: &self.interp,
-                writer_rx: &self.writer_rx,
-                writer_with_spaces: self.writer_with_spaces,
+                input_rx: &self.input_rx,
+                output_rx: &self.output_rx,
+                output_with_spaces: self.output_with_spaces,
                 framerate: self.framerate,
             };
             crate::render::render(&render_app, frame);
@@ -102,7 +124,8 @@ impl App<'_> {
 
     fn tick(&mut self) -> Result<()> {
         self.interp.advance()?;
-        self.writer_rx.tick();
+        self.input_rx.tick();
+        self.output_rx.tick();
 
         Ok(())
     }
